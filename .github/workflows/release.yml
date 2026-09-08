@@ -1,0 +1,74 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: darwin-aarch64
+            bundles: app,dmg
+          - os: macos-15-intel
+            platform: darwin-x86_64
+            bundles: app,dmg
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+            bundles: appimage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install ExifTool on macOS
+        if: runner.os == 'macOS'
+        run: brew install exiftool
+      - name: Install Linux prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libimage-exiftool-perl libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2
+      - run: pnpm install --frozen-lockfile
+      - run: cargo test --locked
+      - run: python3 scripts/bundle_metadata.py
+      - name: Configure signed updates
+        env:
+          TAURI_SIGNING_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+        run: python3 scripts/configure_release.py
+      - name: Build desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --config src-tauri/updater-build.json --bundles ${{ matrix.bundles }}
+      - run: cargo build --release --locked -p photo-sorting-hat
+      - name: Collect platform artifacts
+        run: python3 scripts/collect_release.py ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: artifacts/release/${{ matrix.platform }}/
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: artifacts/downloaded
+      - name: Assemble complete manifest and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish_release.py artifacts/downloaded
