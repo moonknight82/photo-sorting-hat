@@ -166,6 +166,8 @@ impl MetadataTool {
             "-json".into(),
             "-G1".into(),
             "-n".into(),
+            "-api".into(),
+            "structformat=jsonq".into(),
             "-charset".into(),
             "filename=UTF8".into(),
             path_string(path)?,
@@ -208,10 +210,28 @@ impl MetadataTool {
         }
         args.push(path_string(path)?);
         self.execute(&args)?;
-        let actual = keywords_from(&self.read(path)?);
+        // Do not use numeric JSON mode for keyword verification: values such as
+        // "1999" must remain strings, including any leading zeroes.
+        let output = self.execute(&[
+            "-json".into(),
+            "-G1".into(),
+            "-api".into(),
+            "structformat=jsonq".into(),
+            "-charset".into(),
+            "filename=UTF8".into(),
+            "-XMP-dc:Subject".into(),
+            "-IPTC:Keywords".into(),
+            path_string(path)?,
+        ])?;
+        let values: Vec<Value> =
+            serde_json::from_str(&output).context("Invalid ExifTool keyword response")?;
+        let actual = keywords_from(values.first().context("Empty keyword response")?);
         for keyword in keywords {
             if !actual.contains(keyword) {
-                bail!("Keyword read-back failed for {keyword:?}");
+                bail!(
+                    "Keyword read-back failed for {keyword:?} in {}",
+                    path.display()
+                );
             }
         }
         Ok(())
@@ -278,6 +298,8 @@ pub fn keywords_from(value: &Value) -> Vec<String> {
                     }
                 } else if let Some(s) = value.as_str() {
                     result.insert(s.to_owned());
+                } else if value.is_number() {
+                    result.insert(value.to_string());
                 }
             }
         }

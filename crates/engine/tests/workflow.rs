@@ -118,7 +118,9 @@ fn jpeg_round_trip_preserves_source_and_adds_sidecar_and_embedded_tags() {
         ..Recipe::default()
     };
     let engine = a.plan(&recipe);
-    engine.export(&AtomicBool::new(false), &mut |_| {}).unwrap();
+    engine
+        .export(&AtomicBool::new(false), &mut |_| {})
+        .unwrap_or_else(|error| panic!("{error:#}: {:?}", engine.items(0, None, 10).unwrap()));
     let item = engine.items(0, None, 10).unwrap().remove(0);
     assert_eq!(hash(&original), before);
     assert_eq!(item.status, "done");
@@ -131,8 +133,47 @@ fn jpeg_round_trip_preserves_source_and_adds_sidecar_and_embedded_tags() {
         assert!(tags.contains(&"Summer São Paulo".into()));
         assert!(tags.contains(&"ação & <luz>".into()));
     }
-    engine.export(&AtomicBool::new(false), &mut |_| {}).unwrap();
+    engine
+        .export(&AtomicBool::new(false), &mut |_| {})
+        .unwrap_or_else(|error| panic!("{error:#}: {:?}", engine.items(0, None, 10).unwrap()));
     assert_eq!(hash(&original), before);
+}
+#[test]
+fn numeric_folder_keywords_round_trip_as_exact_text() {
+    let a = Archive::new();
+    a.add("1999/photo.jpg", "sample.jpg");
+    let engine = a.plan(&Recipe::default());
+    engine
+        .export(&AtomicBool::new(false), &mut |_| {})
+        .unwrap_or_else(|error| panic!("{error:#}: {:?}", engine.items(0, None, 10).unwrap()));
+    let item = engine.items(0, None, 10).unwrap().remove(0);
+    let mut tool = MetadataTool::new().unwrap();
+    for path in [
+        PathBuf::from(&item.destination),
+        Path::new(&item.destination).with_extension("xmp"),
+    ] {
+        assert!(metadata::keywords_from(&tool.read(&path).unwrap()).contains(&"1999".into()));
+    }
+}
+#[test]
+fn detected_content_type_controls_metadata_writes_and_appledouble_is_skipped() {
+    let a = Archive::new();
+    a.add("004. Selected Photos (Albums)/photo.jpg", "sample.png");
+    a.add("._resource.jpg", "sample.jpg");
+    let engine = a.plan(&Recipe::default());
+    assert_eq!(engine.summary().unwrap()["files"], 1);
+    engine
+        .export(&AtomicBool::new(false), &mut |_| {})
+        .unwrap_or_else(|error| panic!("{error:#}: {:?}", engine.items(0, None, 10).unwrap()));
+    let item = engine.items(0, None, 10).unwrap().remove(0);
+    assert_eq!(item.status, "done");
+    let mut tool = MetadataTool::new().unwrap();
+    assert!(metadata::keywords_from(
+        &tool
+            .read(&Path::new(&item.destination).with_extension("xmp"))
+            .unwrap()
+    )
+    .contains(&"004. Selected Photos (Albums)".into()));
 }
 #[test]
 fn metadata_matrix_exports_raw_tiff_dng_heic_png_video() {

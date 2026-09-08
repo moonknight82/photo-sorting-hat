@@ -55,7 +55,7 @@ function App(){
   async function report(){const path=await save({defaultPath:'photo-hat-report.jsonl',filters:[{name:'JSON Lines report',extensions:['jsonl']}]});if(path)await invoke('save_report',{path});}
   async function resolve(hash:string,decision:string){await invoke('resolve',{hash,decision});await refresh();await loadRows();setSelected(null);}
   async function newSession(){await invoke('new_session');setSources([]);setOutput('');setItems([]);setPages([0]);setFilter('');setStep(0);await refresh();}
-  const completed=counts.done||0;const total=state.summary.files-(counts.duplicate||0);
+  const completed=counts.done||0;const total=state.summary.files-(counts.duplicate||0)-(counts.skipped||0);
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><img src={appIcon} alt=""/></div><div>Photo Sorting Hat<span>A place for every frame.</span></div></div>

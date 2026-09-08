@@ -34,7 +34,7 @@ impl Engine {
         safe_directory(&output, &staging)?;
         let mut tool = metadata::MetadataTool::new()?;
         let total: i64 = self.db.query_row(
-            "SELECT COUNT(*) FROM items WHERE status!='duplicate'",
+            "SELECT COUNT(*) FROM items WHERE status NOT IN ('duplicate','skipped')",
             [],
             |r| r.get(0),
         )?;
@@ -48,6 +48,21 @@ impl Engine {
             };
             after = item.id;
             if item.status == "done" {
+                continue;
+            }
+            if item.status == "skipped" {
+                continue;
+            }
+            if metadata::get(&item.metadata, &["FileType"]).as_deref() == Some("MacOS")
+                || Path::new(&item.source)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("._"))
+            {
+                self.db.execute(
+                    "UPDATE items SET status='skipped',warning='Skipped macOS AppleDouble metadata file',error=NULL WHERE id=?1",
+                    [item.id],
+                )?;
                 continue;
             }
             if item.status == "duplicate" {
@@ -167,7 +182,23 @@ impl Engine {
         fs::create_dir(&dir)?;
         let dest = Path::new(&item.destination);
         let media = dir.join(dest.file_name().context("Invalid destination")?);
-        let embed = metadata::can_embed(&extension(source));
+        let detected = metadata::get(&item.metadata, &["FileTypeExtension"])
+            .unwrap_or_else(|| extension(source))
+            .to_lowercase();
+        let named = extension(source);
+        let same_format = named == detected
+            || matches!(
+                (named.as_str(), detected.as_str()),
+                ("jpeg", "jpg")
+                    | ("jpg", "jpeg")
+                    | ("tiff", "tif")
+                    | ("tif", "tiff")
+                    | ("heif", "heic")
+                    | ("heic", "heif")
+            );
+        // ExifTool selects some write behavior from the filename suffix. Keep
+        // mislabeled media byte-identical and rely on its verified XMP sidecar.
+        let embed = same_format && metadata::can_embed(&detected);
         let linked = recipe.operation == "move" && !embed && fs::hard_link(source, &media).is_ok();
         if !linked {
             copy_checked(source, &media, cancel)?;
@@ -195,7 +226,7 @@ impl Engine {
                 tool.write_keywords(
                     &media,
                     &item.keywords,
-                    ["jpg", "jpeg", "tif", "tiff"].contains(&extension(source).as_str()),
+                    ["jpg", "jpeg", "tif", "tiff"].contains(&detected.as_str()),
                 )?;
             }
         }

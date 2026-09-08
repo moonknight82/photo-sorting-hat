@@ -234,6 +234,13 @@ impl Engine {
                     continue;
                 }
                 let path = entry.path();
+                if path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("._"))
+                {
+                    continue;
+                }
                 let ext = extension(path);
                 if !metadata::is_photo(&ext) && !metadata::is_video(&ext) {
                     continue;
@@ -274,7 +281,9 @@ impl Engine {
                     let detected = metadata::get(&meta, &["FileTypeExtension"])
                         .unwrap_or_default()
                         .to_lowercase();
-                    if !metadata::is_photo(&detected) && !metadata::is_video(&detected) {
+                    if metadata::get(&meta, &["FileType"]).as_deref() == Some("MacOS")
+                        || (!metadata::is_photo(&detected) && !metadata::is_video(&detected))
+                    {
                         bail!("File contents are not recognized as supported photo/video media");
                     }
                     let mut tags: BTreeSet<String> =
@@ -297,7 +306,7 @@ impl Engine {
                                 .map(|c| c.as_os_str().to_string_lossy().to_string()),
                         );
                     }
-                    self.db.execute("INSERT INTO files(source,root,size,mtime,metadata,folders,companions,kind) VALUES(?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(source) DO UPDATE SET size=excluded.size,mtime=excluded.mtime,metadata=excluded.metadata,folders=excluded.folders,companions=excluded.companions,hash=NULL,error=NULL",params![source,metadata::path_string(root)?,size,mtime,meta.to_string(),serde_json::to_string(&folders)?,serde_json::to_string(&companions)?,if metadata::is_video(&ext){"video"}else{"photo"}])?;
+                    self.db.execute("INSERT INTO files(source,root,size,mtime,metadata,folders,companions,kind) VALUES(?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(source) DO UPDATE SET size=excluded.size,mtime=excluded.mtime,metadata=excluded.metadata,folders=excluded.folders,companions=excluded.companions,hash=NULL,error=NULL",params![source,metadata::path_string(root)?,size,mtime,meta.to_string(),serde_json::to_string(&folders)?,serde_json::to_string(&companions)?,if metadata::is_video(&detected){"video"}else{"photo"}])?;
                     self.db
                         .execute("DELETE FROM scan_errors WHERE path=?1", [source])?;
                     Ok(())
