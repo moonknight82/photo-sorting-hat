@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
+import appIcon from './assets/app-icon.png';
 import './styles.css';
 
 type Recipe = {version:number;operation:string;folder_template:string;filename_template:string;photo_folder:string;video_folder:string;separate_video:boolean;project:string;folder_tags:boolean;selected_folders:string[];excluded_folders:string[];keywords:string[];camera_tags:boolean;filesystem_date_fallback:boolean};
@@ -57,7 +58,7 @@ function App(){
   const completed=counts.done||0;const total=state.summary.files-(counts.duplicate||0);
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><svg viewBox="0 0 40 40" fill="none"><path d="m11 28 6-19 6 11 5 8M7 30c8 5 19 4 26-1" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/><path d="m15 23 11 2" stroke="currentColor" strokeWidth="2"/></svg></div><div>Photo Sorting Hat<span>A place for every frame.</span></div></div>
+      <div className="brand"><div className="brand-mark"><img src={appIcon} alt=""/></div><div>Photo Sorting Hat<span>A place for every frame.</span></div></div>
       <div className="nav-label">YOUR WORKFLOW</div>
       <nav>{steps.map((label,i)=><button key={label} className={`nav-item ${step===i?'active':''}`} onClick={()=>{setStep(i);setSettings(false)}}><Icon name={['folder','scan','sliders','grid','export'][i]}/><span>{label}</span><span className="nav-number">{i+1}</span></button>)}</nav>
       <div className="sidebar-bottom"><div className="offline-note"><span className="status-dot"/> Local processing<span>Your archive stays with you.</span></div><button className="quiet sidebar-action" disabled={busy||!desktop} onClick={()=>attempt(newSession)}><Icon name="plus" size={17}/>New archive session</button><button className="quiet sidebar-action" onClick={()=>setSettings(s=>!s)}><Icon name="sliders" size={17}/>Preferences</button><div className="theme-switch" aria-label="Color theme">{(['light','dark','system'] as const).map((t,i)=><button key={t} title={`${t} theme`} aria-label={`${t} theme`} aria-pressed={theme===t} className={theme===t?'selected':''} onClick={()=>setTheme(t)}><Icon name={['sun','moon','screen'][i]} size={17}/></button>)}</div><div className="version">PHOTO SORTING HAT <span>v0.1.0 · Preview</span></div></div>
