@@ -23,7 +23,7 @@ jobs:
           node-version: 22
       - name: Install ExifTool on macOS
         if: runner.os == 'macOS'
-        run: brew install exiftool
+        run: brew install exiftool perl
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libimage-exiftool-perl libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf

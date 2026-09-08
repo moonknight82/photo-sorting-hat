@@ -31,6 +31,14 @@ def main():
         exiftool = exiftool.parent.parent / 'libexec/bin/exiftool'
     shebang = exiftool.read_text().splitlines()[0].removeprefix('#!')
     perl = Path(shebang if Path(shebang).is_file() else shutil.which('perl')).resolve()
+    if platform.system() == 'Darwin':
+        # Apple protects its system Perl as a platform binary. A modified copy is
+        # killed at launch, so package Homebrew's architecture-matched runtime.
+        brewed = [
+            Path('/opt/homebrew/opt/perl/bin/perl'),
+            Path('/usr/local/opt/perl/bin/perl'),
+        ]
+        perl = next((candidate.resolve() for candidate in brewed if candidate.is_file()), perl)
     privlib, archlib = run(str(perl), '-MConfig', '-e', 'print "$Config{privlib}\\n$Config{archlib}"').splitlines()
     candidates = [exiftool.parent / 'lib', exiftool.parent.parent / 'lib/perl5', Path('/usr/share/perl5')]
     library = next((p for p in candidates if (p / 'Image/ExifTool.pm').is_file()), None)
@@ -47,8 +55,10 @@ def main():
     copy_tree(archlib, DEST / 'perl-arch')
     native = DEST / 'native'; native.mkdir()
     if platform.system() == 'Darwin':
-        old_lib = str(Path(archlib)/'CORE/libperl.dylib')
-        subprocess.run(['install_name_tool','-change',old_lib,'@executable_path/perl-arch/CORE/libperl.dylib',str(DEST/'perl')],check=True)
+        dependencies = run('otool', '-L', str(DEST/'perl')).splitlines()
+        old_lib = next((line.strip().split()[0] for line in dependencies if line.strip().split()[0].endswith('/CORE/libperl.dylib')), None)
+        if old_lib:
+            subprocess.run(['install_name_tool','-change',old_lib,'@executable_path/perl-arch/CORE/libperl.dylib',str(DEST/'perl')],check=True)
         for binary in [*(DEST/'perl-arch').rglob('*.bundle'), *(DEST/'perl-arch').rglob('*.dylib'), DEST/'perl']:
             subprocess.run(['codesign','--force','--sign','-','--timestamp=none',str(binary)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     if platform.system() == 'Linux':
