@@ -28,6 +28,7 @@ pub struct Progress {
     pub current: String,
 }
 pub type Notify<'a> = &'a mut dyn FnMut(Progress);
+type PlanRow = (i64, String, String, String, String, Option<String>, String);
 fn progress(notify: &mut Notify<'_>, phase: &str, completed: u64, total: u64, current: &str) {
     notify(Progress {
         phase: phase.into(),
@@ -49,6 +50,11 @@ pub struct Engine {
 }
 pub struct JobLock {
     _file: File,
+}
+impl Drop for JobLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self._file);
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Companion {
@@ -296,7 +302,7 @@ impl Engine {
                         .execute("DELETE FROM scan_errors WHERE path=?1", [source])?;
                     Ok(())
                 })();
-                if count % 250 == 0 {
+                if count.is_multiple_of(250) {
                     transaction.take().unwrap().commit()?;
                     transaction = Some(self.db.unchecked_transaction()?);
                 }
@@ -397,7 +403,7 @@ impl Engine {
         let mut last = 0i64;
         loop {
             check_cancel(cancel)?;
-            let row:Option<(i64,String,String,String,String,Option<String>,String)>=self.db.query_row("SELECT id,source,metadata,folders,mtime,hash,companions FROM files WHERE id>?1 ORDER BY id LIMIT 1",[last],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).optional()?;
+            let row: Option<PlanRow> = self.db.query_row("SELECT id,source,metadata,folders,mtime,hash,companions FROM files WHERE id>?1 ORDER BY id LIMIT 1",[last],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).optional()?;
             let Some((id, source, meta, folders, mtime, hash, companion_json)) = row else {
                 break;
             };

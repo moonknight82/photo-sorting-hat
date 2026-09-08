@@ -48,7 +48,7 @@ impl Archive {
     fn plan(&self, recipe: &Recipe) -> Engine {
         let e = self.engine();
         e.scan(
-            &[self.source.clone()],
+            std::slice::from_ref(&self.source),
             &self.output,
             &AtomicBool::new(false),
             &mut |_| {},
@@ -337,7 +337,7 @@ fn scan_records_bad_media_without_aborting_archive() {
     fs::write(a.source.join("broken.jpg"), b"not a jpeg").unwrap();
     let e = a.engine();
     e.scan(
-        &[a.source.clone()],
+        std::slice::from_ref(&a.source),
         &a.output,
         &AtomicBool::new(false),
         &mut |_| {},
