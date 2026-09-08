@@ -22,7 +22,7 @@ Follow **Sources → Scan → Recipe → Review → Export**. Pick source folder
 
 Session databases live in the app's local application-data directory. Open a previous `.sqlite` session from Preferences. A session preserves its original sources, output, and export manifest; use **New archive session** for another job.
 
-GitHub update checks run at launch when configured and online. Disable them in Preferences for entirely offline operation. Installation always requires a click and waits for the app to be idle. An unconfigured development build does not contact GitHub.
+GitHub update checks run at launch when online. Disable them in Preferences for entirely offline operation. Installation always requires a click and waits for the app to be idle. Offline failures never block the app.
 
 ## Development
 

@@ -2,6 +2,10 @@
 
 Use copies of representative media for all preview validation. Record the app version, operating system, ExifTool version, camera/source format, and result for each run.
 
+## Validation log
+
+- **2026-09-07 — mixed PSD/TIFF batch:** The project owner successfully processed approximately 500 PSD and TIFF files on macOS. Lightroom import and clean-machine installation remain pending.
+
 ## Metadata and importer compatibility
 
 - [ ] Export full-size JPEG, TIFF, PNG, DNG, HEIC, CR2, NEF, and MOV/MP4 samples.
