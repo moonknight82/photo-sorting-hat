@@ -174,10 +174,13 @@ impl Engine {
     }
     pub fn folders(&self) -> Result<Vec<String>> {
         let mut q=self.db.prepare("SELECT DISTINCT j.value FROM files, json_each(files.folders) j ORDER BY j.value LIMIT 10000")?;
-        let result = q
+        let result: Vec<String> = q
             .query_map([], |r| r.get(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(result)
+        Ok(result
+            .into_iter()
+            .filter(|name| recipe::is_meaningful_folder_name(name))
+            .collect())
     }
     pub fn scan(
         &self,

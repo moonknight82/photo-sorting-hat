@@ -69,7 +69,9 @@ photo-sorting-hat --db archive.sqlite plan --recipe my-recipe.json
 photo-sorting-hat formats
 ```
 
-Recipe tokens: `{year}`, `{month}`, `{day}`, `{date}`, `{timestamp}`, `{camera}`, `{make}`, `{source_folder}`, `{event_name}`, `{project}`, `{stem}`. `{event_name}` uses the directory immediately below an `Events` folder. Templates are relative and cannot escape the chosen output. File extensions are preserved. Collisions receive a `__N` suffix shared by the photo and its sidecars.
+Recipe tokens: `{year}`, `{month}`, `{day}`, `{date}`, `{timestamp}`, `{camera}`, `{make}`, `{source_folder}`, `{event_name}`, `{project}`, `{stem}`. `{event_name}` uses the directory immediately below an `Events` folder and disappears cleanly when no event is available. Templates are relative and cannot escape the chosen output. File extensions are preserved. Collisions receive a `__N` suffix shared by the photo and its sidecars.
+
+Folder keywords discard hidden, percent-encoded, and hash-like mixed identifiers automatically while preserving meaningful numeric and numbered names such as `1999` and `004. Selected Photos`.
 
 Capture dates prefer original EXIF timestamps, then valid creation timestamps. Camera clock times without a timezone are preserved and flagged. Missing dates go to `Undated`; the explicit filesystem fallback uses modification time in UTC. No geocoding or inferred location is performed.
 

@@ -107,6 +107,40 @@ fn dates_and_recipes_preserve_camera_clock() {
     .validate()
     .is_err());
 }
+
+#[test]
+fn missing_event_tokens_disappear_and_machine_generated_ancestors_are_filtered() {
+    let recipe = Recipe {
+        folder_template: "Events/{event_name}/{date}".into(),
+        filename_template: "{event_name}_{stem}".into(),
+        event_folder_tags: true,
+        ..Recipe::default()
+    };
+    let metadata = json!({"DateTimeOriginal":"2024:07:18 14:30:22"});
+    let (destination, _) = recipe
+        .destination(&metadata, Path::new("Archive/photo.jpg"), false, None)
+        .unwrap();
+    assert_eq!(destination, Path::new("Photos/Events/2024-07-18/photo.jpg"));
+    let tags = recipe.tags(
+        &json!({}),
+        &[
+            "Archive".into(),
+            "1999".into(),
+            "004. Selected Photos".into(),
+            "02hphOU4QPaQMWK0".into(),
+            "04NFyG+uQXKerewdJpQRVA".into(),
+            "0%FUrlYRT5qRahnNZiJhAIQ".into(),
+            ".thumbnails".into(),
+        ],
+    );
+    assert!(tags.contains(&"Archive".into()));
+    assert!(tags.contains(&"1999".into()));
+    assert!(tags.contains(&"004. Selected Photos".into()));
+    assert!(!tags.iter().any(|tag| tag.contains("QPaQMWK0")));
+    assert!(!tags.iter().any(|tag| tag.contains("QXKerewd")));
+    assert!(!tags.iter().any(|tag| tag.contains('%')));
+    assert!(!tags.contains(&".thumbnails".into()));
+}
 #[test]
 fn jpeg_round_trip_preserves_source_and_adds_sidecar_and_embedded_tags() {
     let a = Archive::new();

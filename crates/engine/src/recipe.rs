@@ -79,7 +79,14 @@ pub fn clean(value: &str) -> String {
 fn render(template: &str, tokens: &[(&str, String)]) -> Result<String> {
     let mut rendered = template.to_owned();
     for (key, value) in tokens {
-        rendered = rendered.replace(&format!("{{{key}}}"), value);
+        let token = format!("{{{key}}}");
+        if value.is_empty() {
+            for separator in ['_', '-', ' '] {
+                rendered = rendered.replace(&format!("{token}{separator}"), "");
+                rendered = rendered.replace(&format!("{separator}{token}"), "");
+            }
+        }
+        rendered = rendered.replace(&token, value);
     }
     if rendered.contains(['{', '}']) {
         bail!("Unknown or malformed recipe token: {rendered}");
@@ -144,12 +151,27 @@ impl Recipe {
         });
         if date.is_some() {
             for part in render(&self.folder_template, &tokens)?.split('/') {
-                path.push(clean(part));
+                if !part.trim_matches(['_', '-', ' ', '.']).is_empty() {
+                    path.push(clean(part));
+                }
             }
         } else {
             path.push("Undated");
         }
-        let stem = clean(&render(&self.filename_template, &tokens)?);
+        let rendered_filename = render(&self.filename_template, &tokens)?;
+        let stem = if rendered_filename
+            .trim_matches(['_', '-', ' ', '.'])
+            .is_empty()
+        {
+            clean(
+                source
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("image"),
+            )
+        } else {
+            clean(&rendered_filename)
+        };
         path.push(format!(
             "{stem}.{}",
             source.extension().and_then(|x| x.to_str()).unwrap_or("bin")
@@ -173,10 +195,11 @@ impl Recipe {
                 folders
                     .iter()
                     .filter(|name| {
-                        !self
-                            .excluded_folders
-                            .iter()
-                            .any(|x| x.eq_ignore_ascii_case(name))
+                        is_meaningful_folder_name(name)
+                            && !self
+                                .excluded_folders
+                                .iter()
+                                .any(|x| x.eq_ignore_ascii_case(name))
                             && (self.selected_folders.is_empty()
                                 || self.selected_folders.contains(name))
                     })
@@ -192,7 +215,9 @@ impl Recipe {
         }
         if self.event_folder_tags {
             if let Some(event) = event_name_from_folders(folders) {
-                tags.insert(event);
+                if is_meaningful_folder_name(&event) {
+                    tags.insert(event);
+                }
             }
         }
         tags.into_iter().filter(|s| !s.is_empty()).collect()
@@ -255,7 +280,10 @@ fn tokens(
         ("project", clean(project)),
         (
             "event_name",
-            clean(&event_name_from_path(path).unwrap_or_default()),
+            event_name_from_path(path)
+                .filter(|name| is_meaningful_folder_name(name))
+                .map(|name| clean(&name))
+                .unwrap_or_default(),
         ),
         (
             "source_folder",
@@ -392,4 +420,54 @@ fn normalize_words(value: &str) -> Vec<String> {
         .filter(|word| !word.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+pub(crate) fn is_meaningful_folder_name(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty()
+        || value.starts_with('.')
+        || value.contains('%')
+        || value.chars().any(char::is_control)
+    {
+        return false;
+    }
+    let compact: Vec<char> = value
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .collect();
+    if compact.is_empty() {
+        return false;
+    }
+    let has_upper = compact.iter().any(|character| character.is_uppercase());
+    let has_lower = compact.iter().any(|character| character.is_lowercase());
+    let digit_count = compact
+        .iter()
+        .filter(|character| character.is_numeric())
+        .count();
+    let class_changes = compact
+        .windows(2)
+        .filter(|pair| character_class(pair[0]) != character_class(pair[1]))
+        .count();
+    let has_word_separator = value
+        .chars()
+        .any(|character| character.is_whitespace() || ".-_&'()".contains(character));
+    if compact.len() >= 12
+        && !has_word_separator
+        && ((has_upper && has_lower && digit_count > 0)
+            || (digit_count >= 3 && class_changes >= 3)
+            || class_changes >= 6)
+    {
+        return false;
+    }
+    true
+}
+
+fn character_class(character: char) -> u8 {
+    if character.is_numeric() {
+        0
+    } else if character.is_uppercase() {
+        1
+    } else {
+        2
+    }
 }
