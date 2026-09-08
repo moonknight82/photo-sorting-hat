@@ -28,7 +28,16 @@ pub struct Progress {
     pub current: String,
 }
 pub type Notify<'a> = &'a mut dyn FnMut(Progress);
-type PlanRow = (i64, String, String, String, String, Option<String>, String);
+type PlanRow = (
+    i64,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    String,
+    String,
+);
 fn progress(notify: &mut Notify<'_>, phase: &str, completed: u64, total: u64, current: &str) {
     notify(Progress {
         phase: phase.into(),
@@ -380,7 +389,7 @@ impl Engine {
             bail!("An export has started; resume it or create a new session");
         }
         let output = PathBuf::from(self.setting("output")?.context("Missing output")?);
-        self.db.execute_batch("BEGIN IMMEDIATE; DELETE FROM reservations; DELETE FROM collision_counters; DELETE FROM items; DELETE FROM artifacts; DELETE FROM cleanup; COMMIT;")?;
+        self.db.execute_batch("BEGIN IMMEDIATE; DELETE FROM reservations; DELETE FROM collision_counters; DELETE FROM items; DELETE FROM artifacts; DELETE FROM cleanup; COMMIT; DROP TABLE IF EXISTS temp.resolution_candidates; CREATE TEMP TABLE resolution_candidates(id INTEGER PRIMARY KEY,key TEXT NOT NULL,rank INTEGER NOT NULL);")?;
         self.set("plan_state", "planning")?;
         self.set("recipe", &serde_json::to_string(recipe)?)?;
         let total: i64 = self
@@ -412,8 +421,8 @@ impl Engine {
         let mut last = 0i64;
         loop {
             check_cancel(cancel)?;
-            let row: Option<PlanRow> = self.db.query_row("SELECT id,source,metadata,folders,mtime,hash,companions FROM files WHERE id>?1 ORDER BY id LIMIT 1",[last],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).optional()?;
-            let Some((id, source, meta, folders, mtime, hash, companion_json)) = row else {
+            let row: Option<PlanRow> = self.db.query_row("SELECT id,source,metadata,folders,mtime,hash,companions,root FROM files WHERE id>?1 ORDER BY id LIMIT 1",[last],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?))).optional()?;
+            let Some((id, source, meta, folders, mtime, hash, companion_json, root)) = row else {
                 break;
             };
             last = id;
@@ -431,6 +440,16 @@ impl Engine {
                 fallback,
             )?;
             let tags = recipe.tags(&meta, &folders);
+            if recipe.skip_lower_resolution_variants {
+                if let Some((key, rank)) =
+                    recipe::resolution_variant(Path::new(&source), Path::new(&root))
+                {
+                    self.db.execute(
+                        "INSERT INTO resolution_candidates VALUES(?1,?2,?3)",
+                        params![id, key, rank],
+                    )?;
+                }
+            }
             let mut status = "planned";
             if let Some(hash) = &hash {
                 let first: i64 =
@@ -496,6 +515,20 @@ impl Engine {
         transaction.take().unwrap().commit()?;
         // Propagate conflicts to all members, including earlier duplicate rows.
         self.db.execute("UPDATE items SET status='review',warning='Duplicate companions differ; choose a resolution' WHERE id IN (SELECT f.id FROM files f WHERE f.hash IN (SELECT f2.hash FROM files f2 JOIN items i ON i.id=f2.id WHERE i.status='review'))",[])?;
+        if recipe.skip_lower_resolution_variants {
+            self.db.execute(
+                "UPDATE items SET status='skipped',warning='Lower-resolution web/Instagram variant skipped; source retained' \
+                 WHERE status IN ('planned','duplicate') AND id IN ( \
+                   SELECT low.id FROM resolution_candidates low JOIN files low_file ON low_file.id=low.id \
+                   WHERE low.rank=0 AND EXISTS ( \
+                     SELECT 1 FROM resolution_candidates preferred JOIN files preferred_file ON preferred_file.id=preferred.id \
+                     WHERE preferred.key=low.key AND preferred.rank>low.rank \
+                       AND (low_file.hash IS NULL OR preferred_file.hash IS NULL OR low_file.hash<>preferred_file.hash) \
+                   ) \
+                 )",
+                [],
+            )?;
+        }
         self.set("plan_state", "ready")?;
         progress(&mut notify, "plan ready", total as u64, total as u64, "");
         Ok(())

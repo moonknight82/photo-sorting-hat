@@ -12,6 +12,8 @@ Photo Sorting Hat is a personal project for bringing scattered photo and video f
 - Preserve existing XMP/ACR editing data and merge existing and selected folder keywords.
 - Keep video under a configurable separate folder using the same recipe.
 - Find exact duplicates with SHA-256 and require review for differing sidecars.
+- Optionally skip matched `web` and `instagram` variants when an unmarked, `Full`, `High`, `High-Res`, `Original`, or `Master` counterpart exists. Skipped sources remain untouched.
+- Recognize `Events/<event name>/...` folders offline, add the event name as a keyword, and use it in output names.
 - **Copy or Move:** Copy is the default. Move removes a selected source only after its full output bundle is verified. Unchanged RAW/video files use hardlinks for staging on the same filesystem when available; all publication uses atomic no-overwrite renames. Other files use verified staged copies. Skipped duplicates and shared sidecars are retained.
 - Resume interrupted jobs and export JSON Lines reports with source references and hashes.
 - Light, dark, and system themes. No image uploads or AI services.
@@ -67,7 +69,7 @@ photo-sorting-hat --db archive.sqlite plan --recipe my-recipe.json
 photo-sorting-hat formats
 ```
 
-Recipe tokens: `{year}`, `{month}`, `{day}`, `{date}`, `{timestamp}`, `{camera}`, `{make}`, `{source_folder}`, `{project}`, `{stem}`. Templates are relative and cannot escape the chosen output. File extensions are preserved. Collisions receive a `__N` suffix shared by the photo and its sidecars.
+Recipe tokens: `{year}`, `{month}`, `{day}`, `{date}`, `{timestamp}`, `{camera}`, `{make}`, `{source_folder}`, `{event_name}`, `{project}`, `{stem}`. `{event_name}` uses the directory immediately below an `Events` folder. Templates are relative and cannot escape the chosen output. File extensions are preserved. Collisions receive a `__N` suffix shared by the photo and its sidecars.
 
 Capture dates prefer original EXIF timestamps, then valid creation timestamps. Camera clock times without a timezone are preserved and flagged. Missing dates go to `Undated`; the explicit filesystem fallback uses modification time in UTC. No geocoding or inferred location is performed.
 

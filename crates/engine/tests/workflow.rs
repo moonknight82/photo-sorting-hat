@@ -387,3 +387,62 @@ fn scan_records_bad_media_without_aborting_archive() {
     assert_eq!(e.summary().unwrap()["scan_errors"], 1);
     assert_eq!(e.summary().unwrap()["files"], 1);
 }
+
+#[test]
+fn skips_only_matched_web_variants_and_derives_event_names_offline() {
+    let a = Archive::new();
+    let low = fs::canonicalize(a.add(
+        "Events/Wedding 2024/Web/portrait_instagram.jpg",
+        "sample.jpg",
+    ))
+    .unwrap();
+    let high = fs::canonicalize(a.add(
+        "Events/Wedding 2024/High Res/portrait_Full.jpg",
+        "sample.jpg",
+    ))
+    .unwrap();
+    let lone =
+        fs::canonicalize(a.add("Events/Wedding 2024/Web/speech_instagram.jpg", "sample.jpg"))
+            .unwrap();
+    for (path, suffix) in [(&high, b"high".as_slice()), (&lone, b"lone".as_slice())] {
+        let mut bytes = fs::read(path).unwrap();
+        bytes.extend_from_slice(suffix);
+        fs::write(path, bytes).unwrap();
+    }
+    let engine = a.plan(&Recipe {
+        operation: "move".into(),
+        filename_template: "{event_name}_{stem}".into(),
+        folder_tags: false,
+        event_folder_tags: true,
+        skip_lower_resolution_variants: true,
+        ..Recipe::default()
+    });
+    let items = engine.items(0, None, 10).unwrap();
+    let low_item = items
+        .iter()
+        .find(|item| item.source == low.to_string_lossy())
+        .unwrap();
+    let high_item = items
+        .iter()
+        .find(|item| item.source == high.to_string_lossy())
+        .unwrap();
+    let lone_item = items
+        .iter()
+        .find(|item| item.source == lone.to_string_lossy())
+        .unwrap();
+    assert_eq!(low_item.status, "skipped");
+    assert_eq!(high_item.status, "planned");
+    assert_eq!(lone_item.status, "planned");
+    assert!(high_item.keywords.contains(&"Wedding 2024".into()));
+    assert!(high_item
+        .destination
+        .ends_with("Wedding 2024_portrait_Full.jpg"));
+
+    engine.export(&AtomicBool::new(false), &mut |_| {}).unwrap();
+    assert!(
+        low.exists(),
+        "a skipped low-resolution source must remain in move mode"
+    );
+    assert!(!high.exists());
+    assert!(!lone.exists());
+}

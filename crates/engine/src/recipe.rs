@@ -27,6 +27,8 @@ pub struct Recipe {
     pub keywords: Vec<String>,
     pub camera_tags: bool,
     pub filesystem_date_fallback: bool,
+    pub skip_lower_resolution_variants: bool,
+    pub event_folder_tags: bool,
 }
 impl Default for Recipe {
     fn default() -> Self {
@@ -50,6 +52,8 @@ impl Default for Recipe {
             keywords: vec![],
             camera_tags: false,
             filesystem_date_fallback: false,
+            skip_lower_resolution_variants: false,
+            event_folder_tags: false,
         }
     }
 }
@@ -186,6 +190,11 @@ impl Recipe {
                 }
             }
         }
+        if self.event_folder_tags {
+            if let Some(event) = event_name_from_folders(folders) {
+                tags.insert(event);
+            }
+        }
         tags.into_iter().filter(|s| !s.is_empty()).collect()
     }
 }
@@ -245,6 +254,10 @@ fn tokens(
         ("make", clean(&get(metadata, &["Make"]).unwrap_or_default())),
         ("project", clean(project)),
         (
+            "event_name",
+            clean(&event_name_from_path(path).unwrap_or_default()),
+        ),
+        (
             "source_folder",
             clean(
                 path.parent()
@@ -258,4 +271,125 @@ fn tokens(
             clean(path.file_stem().and_then(|s| s.to_str()).unwrap_or("image")),
         ),
     ]
+}
+
+fn event_name_from_folders(folders: &[String]) -> Option<String> {
+    folders.windows(2).find_map(|pair| {
+        pair[0]
+            .eq_ignore_ascii_case("events")
+            .then(|| pair[1].trim().to_owned())
+            .filter(|name| !name.is_empty())
+    })
+}
+
+fn event_name_from_path(path: &Path) -> Option<String> {
+    let folders: Vec<String> = path
+        .parent()?
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    event_name_from_folders(&folders)
+}
+
+/// Returns a stable group key and a quality rank for conservative web/export matching.
+/// Rank 0 is an explicit web/Instagram variant, 1 is unmarked, and 2 is explicitly
+/// marked Full/High/High-Res/Original/Master.
+pub(crate) fn resolution_variant(path: &Path, root: &Path) -> Option<(String, u8)> {
+    let relative = path.strip_prefix(root).ok()?;
+    let mut parts = vec![root
+        .to_string_lossy()
+        .nfc()
+        .flat_map(char::to_lowercase)
+        .collect::<String>()];
+    let mut low = false;
+    let mut high = false;
+    let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+    for component in parent.components() {
+        let text = component.as_os_str().to_string_lossy();
+        let (_, marker) = normalize_quality_text(&text);
+        low |= marker == -1;
+        high |= marker == 1;
+        if marker == 0 {
+            parts.push(normalize_words(&text).join(""));
+        }
+    }
+    let stem = relative.file_stem()?.to_string_lossy();
+    let (normalized_stem, marker) = normalize_quality_text(&stem);
+    low |= marker == -1;
+    high |= marker == 1;
+    if normalized_stem.is_empty() {
+        return None;
+    }
+    parts.push(normalized_stem);
+    let source_extension = relative
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let extension = match source_extension.as_str() {
+        "jpeg" => "jpg",
+        "tiff" => "tif",
+        other => other,
+    };
+    parts.push(extension.to_owned());
+    Some((
+        parts.join("/"),
+        if low {
+            0
+        } else if high {
+            2
+        } else {
+            1
+        },
+    ))
+}
+
+fn normalize_quality_text(value: &str) -> (String, i8) {
+    let words = normalize_words(value);
+    let low = words
+        .iter()
+        .any(|word| matches!(word.as_str(), "web" | "instagram"));
+    let high = words.iter().any(|word| {
+        matches!(
+            word.as_str(),
+            "full" | "high" | "highres" | "hires" | "original" | "master"
+        )
+    });
+    let marker = if low {
+        -1
+    } else if high {
+        1
+    } else {
+        0
+    };
+    let name = words
+        .into_iter()
+        .filter(|word| {
+            !matches!(
+                word.as_str(),
+                "web"
+                    | "instagram"
+                    | "full"
+                    | "high"
+                    | "highres"
+                    | "hires"
+                    | "res"
+                    | "resolution"
+                    | "original"
+                    | "master"
+            )
+        })
+        .collect::<String>();
+    (name, marker)
+}
+
+fn normalize_words(value: &str) -> Vec<String> {
+    value
+        .nfc()
+        .flat_map(char::to_lowercase)
+        .collect::<String>()
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
